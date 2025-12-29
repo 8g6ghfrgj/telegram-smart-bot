@@ -5,7 +5,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes, MessageHandler, filters, CallbackQueryHandler
 
-from telethon.manager import telethon_manager
+from tgclient.manager import telethon_manager
 from database.models import SessionModel
 from bot.keyboards import back_keyboard
 
