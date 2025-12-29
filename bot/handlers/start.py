@@ -21,7 +21,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    التنقل بين القوائم
+    التنقل بين القوائم الأساسية فقط
     """
     query = update.callback_query
     await query.answer()
@@ -46,4 +46,11 @@ def register_start_handlers(app):
     تسجيل الهاندلرز
     """
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CallbackQueryHandler(menu_callback))
+
+    # ❗ مهم: تقييد الهاندلر حتى لا يسرق بقية الأزرار
+    app.add_handler(
+        CallbackQueryHandler(
+            menu_callback,
+            pattern="^(back_main|manage_sessions)$"
+        )
+    )
