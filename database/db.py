@@ -1,6 +1,8 @@
 # database/db.py
-# طبقة الاتصال بقاعدة البيانات (SQLite)
-# هذه الطبقة لا تحتوي أي منطق أعمال
+# =========================
+# طبقة قاعدة البيانات (SQLite)
+# مصدر واحد للاتصال + تهيئة الجداول
+# =========================
 
 import os
 import sqlite3
@@ -73,13 +75,15 @@ class Database:
 db = Database(DB_PATH)
 
 
-def init_db():
+def init_db() -> None:
     """
-    تهيئة الجداول الأساسية.
-    هذه الدالة تُستدعى مرة واحدة عند تشغيل البوت.
+    تهيئة جميع الجداول المطلوبة للبوت
+    تُستدعى مرة واحدة عند تشغيل البوت
     """
 
-    # جدول الجلسات (الحسابات)
+    # =========================
+    # Sessions (Telethon accounts)
+    # =========================
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS sessions (
@@ -91,7 +95,9 @@ def init_db():
         """
     )
 
-    # جدول الروابط
+    # =========================
+    # Links
+    # =========================
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS links (
@@ -105,7 +111,9 @@ def init_db():
         """
     )
 
-    # جدول التوزيع (أي رابط لأي حساب)
+    # =========================
+    # Assignments (distribution)
+    # =========================
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS assignments (
