@@ -6,7 +6,7 @@ import asyncio
 from typing import Dict, List
 
 from database.models import AssignmentModel, SessionModel
-from telethon.join import join_links_for_session
+from tgclient.join import join_links_for_session
 from bot.config import NEVER_STOP_JOINING
 
 
