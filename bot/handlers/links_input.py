@@ -1,87 +1,94 @@
 # bot/handlers/links_input.py
-# استقبال الروابط من الرسائل أو الملفات وتصنيفها وتخزينها
-# يعتمد على extractor / classifier / deduplicator / database
+# إدخال روابط تيليجرام (نص أو ملف)
+# لا يوجد MessageHandler هنا – يُستدعى عبر Router مركزي فقط
 
-from telegram import Update, Document
-from telegram.ext import ContextTypes, MessageHandler, filters, CallbackQueryHandler
+import io
+from telegram import Update
+from telegram.ext import ContextTypes
 
-from core.extractor import (
-    extract_links_from_text,
-    extract_links_from_file_content,
-)
-from core.classifier import classify_link
-from core.deduplicator import deduplicate_links
 from database.models import LinkModel
 from bot.keyboards import back_keyboard
 
 
+# ======================
+# Callback (Button)
+# ======================
+
 async def upload_links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    زر رفع الروابط
+    زر: رفع روابط
     """
     query = update.callback_query
     await query.answer()
 
+    context.user_data.clear()
+    context.user_data["awaiting_links"] = True
+
     await query.edit_message_text(
-        "📂 أرسل الروابط الآن:\n"
-        "- نص مباشر\n"
-        "- أو ملف txt\n\n"
-        "سيتم الاستخراج والتصنيف تلقائيًا.",
+        "📂 أرسل الروابط الآن (نص مباشر أو ملف txt):",
         reply_markup=back_keyboard(),
     )
 
 
-async def handle_text_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    استقبال روابط نصية
-    """
-    text = update.message.text
-    links = extract_links_from_text(text)
-    await _process_links(update, links)
+# ======================
+# Text / File Handler (via Router)
+# ======================
 
-
-async def handle_file_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_links_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    استقبال ملف روابط
+    استقبال الروابط كنص أو ملف
     """
-    document: Document = update.message.document
-    file = await document.get_file()
-    content = await file.download_as_bytearray()
-    text = content.decode(errors="ignore")
-
-    links = extract_links_from_file_content(text)
-    await _process_links(update, links)
-
-
-async def _process_links(update: Update, links: set):
-    """
-    معالجة الروابط:
-    - حذف التكرار
-    - تصنيف
-    - تخزين
-    """
-    if not links:
-        await update.message.reply_text("❌ لم يتم العثور على روابط.")
+    if not context.user_data.get("awaiting_links"):
         return
 
-    links = deduplicate_links(links)
+    context.user_data.clear()
 
-    saved = 0
+    links = []
+
+    # --------
+    # ملف
+    # --------
+    if update.message.document:
+        file = await update.message.document.get_file()
+        content = await file.download_as_bytearray()
+        text = content.decode(errors="ignore")
+        links = _extract_links(text)
+
+    # --------
+    # نص
+    # --------
+    elif update.message.text:
+        links = _extract_links(update.message.text)
+
+    if not links:
+        await update.message.reply_text(
+            "❌ لم يتم العثور على أي روابط.",
+            reply_markup=back_keyboard(),
+        )
+        return
+
+    added = 0
     for link in links:
-        category = classify_link(link)
-        LinkModel.add(link, category)
-        saved += 1
+        if LinkModel.add(link):
+            added += 1
 
     await update.message.reply_text(
-        f"✅ تم حفظ {saved} رابط بعد الفرز.",
+        f"✅ تم حفظ {added} رابط.",
         reply_markup=back_keyboard(),
     )
 
 
-def register_links_input_handlers(app):
+# ======================
+# Helpers
+# ======================
+
+def _extract_links(text: str) -> list[str]:
     """
-    تسجيل الهاندلرز
+    استخراج روابط تيليجرام من النص
     """
-    app.add_handler(CallbackQueryHandler(upload_links_callback, pattern="^upload_links$"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_links))
-    app.add_handler(MessageHandler(filters.Document.TEXT, handle_file_links))
+    results = []
+    for token in text.split():
+        token = token.strip()
+        if token.startswith("https://t.me/") or token.startswith("http://t.me/"):
+            results.append(token)
+    return list(dict.fromkeys(results))  # إزالة التكرار مع الحفاظ على الترتيب
