@@ -49,4 +49,18 @@ async def start_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await query.edit_message_text(
         "🚀 تم تشغيل الانضمام التلقائي.\n"
-        "ال
+        "العملية تعمل في الخلفية ولن تتوقف.",
+        reply_markup=back_keyboard(),
+    )
+
+
+def register_joiner_handlers(app):
+    """
+    تسجيل الهاندلرز
+    """
+    app.add_handler(
+        CallbackQueryHandler(distribute_links_callback, pattern="^distribute_links$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(start_join_callback, pattern="^start_join$")
+    )
