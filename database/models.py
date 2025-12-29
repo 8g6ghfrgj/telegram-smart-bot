@@ -1,14 +1,15 @@
 # database/models.py
-# طبقة نماذج البيانات (Models)
-# كل منطق القراءة/الكتابة من DB هنا فقط
+# =========================
+# Models: طبقة منطق قاعدة البيانات
+# كل القراءة/الكتابة من وإلى DB هنا فقط
+# =========================
 
 from typing import List, Optional
-
 from database.db import db
 
 
 # =========================
-# Sessions (Accounts)
+# Sessions (Telethon Accounts)
 # =========================
 
 class SessionModel:
@@ -100,11 +101,7 @@ class LinkModel:
     @staticmethod
     def mark_dead(link_id: int) -> None:
         db.execute(
-            """
-            UPDATE links
-            SET is_alive = -1
-            WHERE id = ?
-            """,
+            "UPDATE links SET is_alive = -1 WHERE id = ?",
             (link_id,),
         )
 
@@ -116,7 +113,7 @@ class LinkModel:
             ORDER BY id ASC
         """
         params = ()
-        if limit:
+        if limit is not None:
             query += " LIMIT ?"
             params = (limit,)
 
@@ -151,7 +148,7 @@ class AssignmentModel:
     def get_pending_by_session(session_id: int) -> List[dict]:
         rows = db.fetchall(
             """
-            SELECT a.id, l.link
+            SELECT a.id, a.link_id, l.link
             FROM assignments a
             JOIN links l ON l.id = a.link_id
             WHERE a.session_id = ? AND a.joined = 0
