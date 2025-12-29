@@ -1,6 +1,7 @@
 # bot/handlers/filters.py
-# تصفية روابط تيليجرام (حية / ميتة + التصنيف)
-# يعتمد على tgclient/manager.py و database/models.py
+# =========================
+# تصفية روابط تيليجرام (حية / ميتة + تصنيف)
+# =========================
 
 import asyncio
 from telegram import Update
@@ -20,7 +21,7 @@ from bot.keyboards import back_keyboard
 
 
 # ======================
-# Callback (Button)
+# Callback Button
 # ======================
 
 async def filter_links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,19 +50,18 @@ async def filter_links_callback(update: Update, context: ContextTypes.DEFAULT_TY
     checked = await _bulk_check_links(session)
 
     await query.edit_message_text(
-        f"✅ انتهت التصفية.\n"
-        f"تم فحص {checked} رابط.",
+        f"✅ انتهت التصفية.\nتم فحص {checked} رابط.",
         reply_markup=back_keyboard(),
     )
 
 
 # ======================
-# Internal logic
+# Internal Logic
 # ======================
 
-async def _bulk_check_links(session: dict, limit: int = 100):
+async def _bulk_check_links(session: dict, limit: int = 100) -> int:
     """
-    فحص مجموعة روابط غير مفحوصة
+    فحص مجموعة روابط غير مفحوصة (is_alive = 0)
     """
     unchecked = LinkModel.get_unchecked(limit=limit)
     if not unchecked:
@@ -91,6 +91,7 @@ async def _bulk_check_links(session: dict, limit: int = 100):
         except Exception:
             # أي خطأ غير متوقع → نعتبر الرابط ميت
             LinkModel.mark_dead(item["id"])
+            await asyncio.sleep(1)
             continue
 
     return count
@@ -99,11 +100,11 @@ async def _bulk_check_links(session: dict, limit: int = 100):
 async def _check_single_link(client, link_id: int, link: str):
     """
     فحص رابط واحد
-    يرجع: (is_alive, category)
+    يرجع: (is_alive: bool, category: str)
     """
 
     try:
-        # روابط خاصة (invite)
+        # روابط خاصة (Invite)
         if "joinchat" in link or "/+" in link:
             invite = await client(CheckChatInviteRequest(link))
             if invite.chat:
