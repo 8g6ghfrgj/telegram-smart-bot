@@ -1,12 +1,14 @@
 # bot/main.py
-# نقطة تشغيل البوت (النسخة الصحيحة لـ python-telegram-bot v20)
+# نقطة تشغيل البوت (Production-ready)
+# متوافق مع python-telegram-bot v20+
 
 import logging
 from telegram.ext import ApplicationBuilder
 
-from bot.config import BOT_TOKEN
+from config import BOT_TOKEN
 from database.db import init_db
 from bot.router import register_all_handlers
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,13 +17,13 @@ logging.basicConfig(
 
 
 def main():
-    # تهيئة قاعدة البيانات
+    # تهيئة قاعدة البيانات (مرة واحدة عند الإقلاع)
     init_db()
 
-    # إنشاء التطبيق
+    # إنشاء تطبيق البوت
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # تسجيل جميع الهاندلرز من Router واحد
+    # تسجيل جميع الهاندلرز عبر Router مركزي
     register_all_handlers(app)
 
     # تشغيل البوت (Polling صحيح)
