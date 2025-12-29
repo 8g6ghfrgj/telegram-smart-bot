@@ -98,3 +98,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # حذف جلسة
     if context.user_data.get("awaiting_remove_session"):
+        context.user_data.clear()
+        try:
+            session_id = int(text)
+        except ValueError:
+            await update.message.reply_text(
+                "❌ ID غير صحيح.",
+                reply_markup=back_keyboard(),
+            )
+            return
+
+        await telethon_manager.deactivate_session(session_id)
+        await update.message.reply_text(
+            "✅ تم حذف الحساب.",
+            reply_markup=back_keyboard(),
+        )
+        return
