@@ -1,16 +1,16 @@
 # bot/handlers/joiner.py
 # =========================
-# توزيع الروابط + الانضمام التلقائي (Background)
+# التوزيع + بدء الانضمام
+# مربوط مع core/distributor و core/join_worker
 # =========================
 
 import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from database.models import SessionModel, LinkModel, AssignmentModel
-from tgclient.manager import telethon_manager
 from bot.keyboards import back_keyboard
-from config import LINKS_PER_SESSION, JOIN_DELAY_SECONDS
+from core.distributor import distribute_links
+from core.join_worker import run_join_worker
 
 
 # ======================
@@ -19,21 +19,14 @@ from config import LINKS_PER_SESSION, JOIN_DELAY_SECONDS
 
 async def distribute_links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    زر: توزيع الروابط على الحسابات
+    زر: توزيع الروابط
     """
     query = update.callback_query
     await query.answer()
 
-    sessions = SessionModel.get_active()
-    if not sessions:
-        await query.edit_message_text(
-            "❌ لا توجد حسابات للتوزيع.",
-            reply_markup=back_keyboard(),
-        )
-        return
+    result = distribute_links()
 
-    links = LinkModel.get_alive_unassigned()
-    if not links:
+    if result["links"] == 0:
         await query.edit_message_text(
             "❌ لا توجد روابط جاهزة للتوزيع.\n"
             "تأكد من رفع الروابط ثم تصفيتها.",
@@ -41,26 +34,8 @@ async def distribute_links_callback(update: Update, context: ContextTypes.DEFAUL
         )
         return
 
-    link_index = 0
-    assigned = 0
-
-    for session in sessions:
-        for _ in range(LINKS_PER_SESSION):
-            if link_index >= len(links):
-                break
-
-            AssignmentModel.assign(
-                session_id=session["id"],
-                link_id=links[link_index]["id"],
-            )
-            assigned += 1
-            link_index += 1
-
-        if link_index >= len(links):
-            break
-
     await query.edit_message_text(
-        f"✅ تم توزيع {assigned} رابط على الحسابات.",
+        f"✅ تم توزيع {result['links']} رابط على {result['sessions']} حساب.",
         reply_markup=back_keyboard(),
     )
 
@@ -76,68 +51,21 @@ async def start_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
-    # نمنع تشغيله مرتين
-    if context.application.bot_data.get("joiner_running"):
+    # منع التشغيل المكرر
+    if context.application.bot_data.get("join_worker_running"):
         await query.edit_message_text(
             "⚠️ الانضمام يعمل بالفعل.",
             reply_markup=back_keyboard(),
         )
         return
 
-    context.application.bot_data["joiner_running"] = True
-    asyncio.create_task(_join_loop())
+    context.application.bot_data["join_worker_running"] = True
+
+    # تشغيل Worker في الخلفية
+    asyncio.create_task(run_join_worker())
 
     await query.edit_message_text(
         "🚀 تم بدء الانضمام التلقائي.\n"
-        "سيستمر العمل في الخلفية.",
+        "العمل مستمر في الخلفية.",
         reply_markup=back_keyboard(),
     )
-
-
-# ======================
-# Background Join Loop
-# ======================
-
-async def _join_loop():
-    """
-    حلقة الانضمام المستمرة
-    لا تتوقف
-    """
-    while True:
-        sessions = SessionModel.get_active()
-
-        for session in sessions:
-            pending = AssignmentModel.get_pending_by_session(session["id"])
-            if not pending:
-                continue
-
-            try:
-                client = await telethon_manager.get_client(
-                    session["id"],
-                    session["session_string"],
-                )
-            except Exception:
-                continue
-
-            for item in pending:
-                link = item["link"]
-                link_id = item["link_id"]
-
-                try:
-                    # Telethon يتعامل مع العام والخاص تلقائيًا
-                    await client.join_chat(link)
-
-                    AssignmentModel.mark_joined(
-                        session_id=session["id"],
-                        link_id=link_id,
-                    )
-
-                    await asyncio.sleep(JOIN_DELAY_SECONDS)
-
-                except Exception:
-                    # نتجاهل الخطأ ونكمل
-                    await asyncio.sleep(JOIN_DELAY_SECONDS)
-                    continue
-
-        # فاصل بسيط قبل الدورة التالية
-        await asyncio.sleep(5)
