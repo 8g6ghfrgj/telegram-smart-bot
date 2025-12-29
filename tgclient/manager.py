@@ -1,10 +1,10 @@
-# telethon/manager.py
+# tgclient/manager.py
 # إدارة جلسات Telethon (StringSession فقط)
 # هذا الملف لا يُنشئ أي اتصال فعلي إلا عند الطلب
 
 import os
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -24,7 +24,6 @@ class TelethonSessionManager:
     def __init__(self):
         self._clients: Dict[int, TelegramClient] = {}
 
-        # نقرأ القيم هنا لكن لا نستخدمها إلا عند التشغيل الفعلي
         self._api_id = os.getenv("TELETHON_API_ID")
         self._api_hash = os.getenv("TELETHON_API_HASH")
 
@@ -33,9 +32,6 @@ class TelethonSessionManager:
     # =========================
 
     def add_session(self, session_string: str) -> bool:
-        """
-        إضافة جلسة جديدة إذا لم تتجاوز الحد
-        """
         active = SessionModel.get_active()
         if len(active) >= MAX_SESSIONS:
             return False
@@ -62,19 +58,12 @@ class TelethonSessionManager:
     # =========================
 
     def _check_credentials(self):
-        """
-        Telethon يتطلب api_id و api_hash فعليًا.
-        لا نمنع التشغيل العام للبوت، لكن نمنع تشغيل الحسابات بدونها.
-        """
         if not self._api_id or not self._api_hash:
             raise RuntimeError(
-                "TELETHON_API_ID و TELETHON_API_HASH غير مضبوطين في المتغيرات البيئية."
+                "TELETHON_API_ID و TELETHON_API_HASH غير مضبوطين في المتغيرات البيئية"
             )
 
     async def get_client(self, session_id: int, session_string: str) -> TelegramClient:
-        """
-        إرجاع عميل Telethon جاهز ومتصّل
-        """
         if session_id in self._clients:
             return self._clients[session_id]
 
@@ -83,18 +72,14 @@ class TelethonSessionManager:
         client = TelegramClient(
             StringSession(session_string),
             int(self._api_id),
-            self._api_hash
+            self._api_hash,
         )
 
         await client.connect()
-
         self._clients[session_id] = client
         return client
 
     async def disconnect_all(self):
-        """
-        فصل جميع الاتصالات
-        """
         for client in self._clients.values():
             try:
                 await client.disconnect()
