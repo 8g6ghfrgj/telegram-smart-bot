@@ -1,97 +1,111 @@
 # database/db.py
-# إدارة الاتصال بقاعدة بيانات SQLite
-# هذا الملف أساسي ولن يتم تعديله لاحقًا
+# طبقة الاتصال بقاعدة البيانات (SQLite)
+# هذه الطبقة لا تحتوي أي منطق أعمال
 
+import os
 import sqlite3
-from pathlib import Path
-from threading import Lock
+from typing import Any, Iterable, Optional
 
-from bot.config import DB_PATH
-
-# قفل لمنع تعارض الكتابة
-_db_lock = Lock()
+from config import DB_PATH
 
 
 class Database:
-    def __init__(self, db_path: Path = DB_PATH):
-        self.db_path = db_path
-        self._connection = None
+    def __init__(self, path: str):
+        self.path = path
+        self._ensure_dir()
 
-    def connect(self):
-        if self._connection is None:
-            self._connection = sqlite3.connect(
-                self.db_path,
-                check_same_thread=False
-            )
-            self._connection.row_factory = sqlite3.Row
-        return self._connection
+    def _ensure_dir(self):
+        directory = os.path.dirname(self.path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
 
-    def execute(self, query: str, params: tuple = (), commit: bool = False):
-        with _db_lock:
-            conn = self.connect()
-            cursor = conn.cursor()
-            cursor.execute(query, params)
+    def connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def execute(
+        self,
+        query: str,
+        params: Iterable[Any] = (),
+        commit: bool = True,
+    ) -> None:
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.execute(query, params)
             if commit:
                 conn.commit()
-            return cursor
 
-    def executemany(self, query: str, params_list: list, commit: bool = False):
-        with _db_lock:
-            conn = self.connect()
-            cursor = conn.cursor()
-            cursor.executemany(query, params_list)
+    def executemany(
+        self,
+        query: str,
+        params: Iterable[Iterable[Any]],
+        commit: bool = True,
+    ) -> None:
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.executemany(query, params)
             if commit:
                 conn.commit()
-            return cursor
 
-    def fetchone(self, query: str, params: tuple = ()):
-        cursor = self.execute(query, params)
-        return cursor.fetchone()
+    def fetchone(
+        self,
+        query: str,
+        params: Iterable[Any] = (),
+    ) -> Optional[sqlite3.Row]:
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.execute(query, params)
+            return cur.fetchone()
 
-    def fetchall(self, query: str, params: tuple = ()):
-        cursor = self.execute(query, params)
-        return cursor.fetchall()
+    def fetchall(
+        self,
+        query: str,
+        params: Iterable[Any] = (),
+    ) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            cur = conn.cursor()
+            cur.execute(query, params)
+            return cur.fetchall()
 
-    def close(self):
-        if self._connection:
-            self._connection.close()
-            self._connection = None
 
-
-# كائن قاعدة بيانات عام يستخدم في جميع المشروع
-db = Database()
+# كائن قاعدة البيانات العام
+db = Database(DB_PATH)
 
 
 def init_db():
     """
-    إنشاء الجداول الأساسية إذا لم تكن موجودة
+    تهيئة الجداول الأساسية.
+    هذه الدالة تُستدعى مرة واحدة عند تشغيل البوت.
     """
+
+    # جدول الجلسات (الحسابات)
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_string TEXT UNIQUE NOT NULL,
-            is_active INTEGER DEFAULT 1,
+            is_active INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """,
-        commit=True
+        """
     )
 
+    # جدول الروابط
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS links (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             link TEXT UNIQUE NOT NULL,
-            category TEXT NOT NULL,
-            is_alive INTEGER DEFAULT 1,
-            assigned INTEGER DEFAULT 0,
+            category TEXT,
+            is_alive INTEGER DEFAULT 0,
+            is_assigned INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """,
-        commit=True
+        """
     )
 
+    # جدول التوزيع (أي رابط لأي حساب)
     db.execute(
         """
         CREATE TABLE IF NOT EXISTS assignments (
@@ -100,8 +114,9 @@ def init_db():
             link_id INTEGER NOT NULL,
             joined INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(session_id, link_id)
+            UNIQUE(session_id, link_id),
+            FOREIGN KEY(session_id) REFERENCES sessions(id),
+            FOREIGN KEY(link_id) REFERENCES links(id)
         )
-        """,
-        commit=True
+        """
     )
