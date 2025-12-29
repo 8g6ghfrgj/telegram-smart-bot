@@ -1,6 +1,7 @@
 # bot/handlers/links_input.py
 # =========================
 # إدخال روابط تيليجرام (نص أو ملف txt)
+# مربوط مع core/link_extractor
 # =========================
 
 from telegram import Update
@@ -8,6 +9,11 @@ from telegram.ext import ContextTypes
 
 from database.models import LinkModel
 from bot.keyboards import back_keyboard
+
+from core.link_extractor import (
+    extract_links,
+    extract_links_from_file_bytes,
+)
 
 
 # ======================
@@ -31,13 +37,12 @@ async def upload_links_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 # ======================
-# Text / File Handler (via Router)
+# Text / File Handler
 # ======================
 
 async def handle_links_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     استقبال الروابط كنص أو ملف
-    (يتم استدعاؤه من Router المركزي فقط)
     """
     if not context.user_data.get("awaiting_links"):
         return
@@ -51,15 +56,14 @@ async def handle_links_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --------
     if update.message.document:
         file = await update.message.document.get_file()
-        content = await file.download_as_bytearray()
-        text = content.decode(errors="ignore")
-        links = _extract_links(text)
+        data = await file.download_as_bytearray()
+        links = extract_links_from_file_bytes(data)
 
     # --------
     # نص مباشر
     # --------
     elif update.message.text:
-        links = _extract_links(update.message.text)
+        links = extract_links(update.message.text)
 
     if not links:
         await update.message.reply_text(
@@ -77,21 +81,3 @@ async def handle_links_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ تم حفظ {added} رابط.",
         reply_markup=back_keyboard(),
     )
-
-
-# ======================
-# Helpers
-# ======================
-
-def _extract_links(text: str) -> list[str]:
-    """
-    استخراج روابط تيليجرام من النص
-    """
-    results = []
-    for token in text.split():
-        token = token.strip()
-        if token.startswith("https://t.me/") or token.startswith("http://t.me/"):
-            results.append(token)
-
-    # إزالة التكرار مع الحفاظ على الترتيب
-    return list(dict.fromkeys(results))
