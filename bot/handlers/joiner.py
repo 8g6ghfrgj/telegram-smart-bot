@@ -1,6 +1,7 @@
 # bot/handlers/joiner.py
-# توزيع الروابط + بدء الانضمام الفعلي
-# يعتمد على database/models.py و tgclient/manager.py
+# =========================
+# توزيع الروابط + الانضمام التلقائي (Background)
+# =========================
 
 import asyncio
 from telegram import Update
@@ -13,7 +14,7 @@ from config import LINKS_PER_SESSION, JOIN_DELAY_SECONDS
 
 
 # ======================
-# Callback: Distribute
+# Callback: توزيع الروابط
 # ======================
 
 async def distribute_links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,17 +66,17 @@ async def distribute_links_callback(update: Update, context: ContextTypes.DEFAUL
 
 
 # ======================
-# Callback: Start Join
+# Callback: بدء الانضمام
 # ======================
 
 async def start_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    زر: بدء الانضمام
+    زر: بدء الانضمام التلقائي
     """
     query = update.callback_query
     await query.answer()
 
-    # تشغيل الانضمام في الخلفية مرة واحدة فقط
+    # نمنع تشغيله مرتين
     if context.application.bot_data.get("joiner_running"):
         await query.edit_message_text(
             "⚠️ الانضمام يعمل بالفعل.",
@@ -99,10 +100,12 @@ async def start_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def _join_loop():
     """
-    حلقة الانضمام الدائمة
+    حلقة الانضمام المستمرة
+    لا تتوقف
     """
     while True:
         sessions = SessionModel.get_active()
+
         for session in sessions:
             pending = AssignmentModel.get_pending_by_session(session["id"])
             if not pending:
@@ -110,24 +113,23 @@ async def _join_loop():
 
             try:
                 client = await telethon_manager.get_client(
-                    session["id"], session["session_string"]
+                    session["id"],
+                    session["session_string"],
                 )
             except Exception:
                 continue
 
             for item in pending:
-                try:
-                    link = item["link"]
+                link = item["link"]
+                link_id = item["link_id"]
 
-                    # روابط خاصة
-                    if "joinchat" in link or "/+" in link:
-                        await client.join_chat(link)
-                    else:
-                        await client.join_chat(link)
+                try:
+                    # Telethon يتعامل مع العام والخاص تلقائيًا
+                    await client.join_chat(link)
 
                     AssignmentModel.mark_joined(
                         session_id=session["id"],
-                        link_id=_get_link_id(session["id"], link),
+                        link_id=link_id,
                     )
 
                     await asyncio.sleep(JOIN_DELAY_SECONDS)
@@ -137,23 +139,5 @@ async def _join_loop():
                     await asyncio.sleep(JOIN_DELAY_SECONDS)
                     continue
 
-        # لا نتوقف أبداً
+        # فاصل بسيط قبل الدورة التالية
         await asyncio.sleep(5)
-
-
-def _get_link_id(session_id: int, link: str) -> int:
-    """
-    جلب link_id من DB
-    """
-    from database.db import db
-
-    row = db.fetchone(
-        """
-        SELECT l.id
-        FROM links l
-        JOIN assignments a ON a.link_id = l.id
-        WHERE a.session_id = ? AND l.link = ?
-        """,
-        (session_id, link),
-    )
-    return row["id"] if row else 0
