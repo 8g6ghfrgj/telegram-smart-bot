@@ -1,35 +1,71 @@
-# core/extractor.py
-# استخراج روابط تيليجرام من النصوص والملفات
-# هذا الملف مستقل ويُستخدم من handlers و core مباشرة
+# core/link_extractor.py
+# =========================
+# استخراج روابط تيليجرام من نصوص أو ملفات
+# منطق فقط (Pure Logic)
+# =========================
 
 import re
-from typing import Set
-
-from bot.config import TELEGRAM_LINK_REGEX
+from typing import List
 
 
-def extract_links_from_text(text: str) -> Set[str]:
+# نمط روابط تيليجرام (عام + خاص)
+TELEGRAM_LINK_REGEX = re.compile(
+    r"(https?://t\.me/(?:joinchat/|\+)?[A-Za-z0-9_/-]+)",
+    re.IGNORECASE,
+)
+
+
+def extract_links(text: str) -> List[str]:
     """
-    استخراج جميع روابط تيليجرام من نص واحد
+    استخراج روابط تيليجرام من نص خام
+    - يدعم الروابط العامة والخاصة
+    - يمنع التكرار
+    - يحافظ على الترتيب
     """
     if not text:
-        return set()
+        return []
 
-    return set(re.findall(TELEGRAM_LINK_REGEX, text))
+    matches = TELEGRAM_LINK_REGEX.findall(text)
+    return _unique_preserve_order(matches)
 
 
-def extract_links_from_lines(lines: list) -> Set[str]:
+def extract_links_from_lines(lines: List[str]) -> List[str]:
     """
-    استخراج الروابط من قائمة أسطر (ملفات txt مثلاً)
+    استخراج الروابط من قائمة أسطر
     """
-    links = set()
+    results: List[str] = []
     for line in lines:
-        links.update(extract_links_from_text(line))
-    return links
+        results.extend(extract_links(line))
+    return _unique_preserve_order(results)
 
 
-def extract_links_from_file_content(content: str) -> Set[str]:
+def extract_links_from_file_bytes(data: bytes) -> List[str]:
     """
-    محتوى ملف كنص كامل
+    استخراج الروابط من ملف (bytes)
     """
-    return extract_links_from_text(content)
+    try:
+        text = data.decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+
+    return extract_links(text)
+
+
+# =========================
+# Helpers
+# =========================
+
+def _unique_preserve_order(items: List[str]) -> List[str]:
+    """
+    إزالة التكرار مع الحفاظ على الترتيب
+    """
+    seen = set()
+    result = []
+    for item in items:
+        item = item.strip()
+        if not item:
+            continue
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
