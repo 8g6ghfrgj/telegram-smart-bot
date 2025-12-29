@@ -1,5 +1,7 @@
 # bot/keyboards.py
-# تعريف جميع الأزرار والقوائم
+# =========================
+# جميع أزرار البوت (Inline Keyboards)
+# =========================
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
