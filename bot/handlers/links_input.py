@@ -1,8 +1,8 @@
 # bot/handlers/links_input.py
-# إدخال روابط تيليجرام (نص أو ملف)
-# لا يوجد MessageHandler هنا – يُستدعى عبر Router مركزي فقط
+# =========================
+# إدخال روابط تيليجرام (نص أو ملف txt)
+# =========================
 
-import io
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,7 +11,7 @@ from bot.keyboards import back_keyboard
 
 
 # ======================
-# Callback (Button)
+# Callback Button
 # ======================
 
 async def upload_links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -37,6 +37,7 @@ async def upload_links_callback(update: Update, context: ContextTypes.DEFAULT_TY
 async def handle_links_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     استقبال الروابط كنص أو ملف
+    (يتم استدعاؤه من Router المركزي فقط)
     """
     if not context.user_data.get("awaiting_links"):
         return
@@ -46,7 +47,7 @@ async def handle_links_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     links = []
 
     # --------
-    # ملف
+    # ملف txt
     # --------
     if update.message.document:
         file = await update.message.document.get_file()
@@ -55,14 +56,14 @@ async def handle_links_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         links = _extract_links(text)
 
     # --------
-    # نص
+    # نص مباشر
     # --------
     elif update.message.text:
         links = _extract_links(update.message.text)
 
     if not links:
         await update.message.reply_text(
-            "❌ لم يتم العثور على أي روابط.",
+            "❌ لم يتم العثور على روابط تيليجرام.",
             reply_markup=back_keyboard(),
         )
         return
@@ -91,4 +92,6 @@ def _extract_links(text: str) -> list[str]:
         token = token.strip()
         if token.startswith("https://t.me/") or token.startswith("http://t.me/"):
             results.append(token)
-    return list(dict.fromkeys(results))  # إزالة التكرار مع الحفاظ على الترتيب
+
+    # إزالة التكرار مع الحفاظ على الترتيب
+    return list(dict.fromkeys(results))
