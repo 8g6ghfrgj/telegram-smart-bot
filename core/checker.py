@@ -1,6 +1,8 @@
-# core/checker.py
-# فحص روابط تيليجرام (حية / ميتة) وتحديد النوع الحقيقي عبر Telethon
-# يعتمد على tgclient/manager.py و database/models.py
+# core/link_checker.py
+# =========================
+# فحص روابط تيليجرام (حي / ميت + تصنيف)
+# منطق فقط (يُستدعى من handlers أو workers)
+# =========================
 
 import asyncio
 from typing import Tuple
@@ -13,26 +15,24 @@ from telethon.errors import (
 from telethon.tl.functions.messages import CheckChatInviteRequest
 from telethon.tl.functions.channels import GetFullChannelRequest
 
-from tgclient.manager import telethon_manager
 from database.models import LinkModel
 
 
-async def check_link_alive(
-    session_id: int,
-    session_string: str,
-    link_id: int,
-    link: str,
-) -> Tuple[bool, str]:
+async def check_single_link(client, link_id: int, link: str) -> Tuple[bool, str]:
     """
-    يفحص الرابط:
-    - هل حي أم ميت
-    - يحدد التصنيف النهائي
-    """
+    فحص رابط واحد باستخدام Telethon client جاهز
+    يرجع:
+      (is_alive, category)
 
-    client = await telethon_manager.get_client(session_id, session_string)
+    category:
+      - channel
+      - group_public
+      - group_private
+      - unknown
+    """
 
     try:
-        # روابط الانضمام الخاصة
+        # روابط خاصة (Invite)
         if "joinchat" in link or "/+" in link:
             invite = await client(CheckChatInviteRequest(link))
             if invite.chat:
@@ -43,7 +43,8 @@ async def check_link_alive(
         entity = await client.get_entity(link)
         full = await client(GetFullChannelRequest(entity))
 
-        if getattr(full.full_chat, "participants_count", 0) > 0:
+        participants = getattr(full.full_chat, "participants_count", 0)
+        if participants > 0:
             if getattr(entity, "broadcast", False):
                 return True, "channel"
             return True, "group_public"
@@ -51,30 +52,53 @@ async def check_link_alive(
         return False, "unknown"
 
     except (InviteHashExpiredError, InviteHashInvalidError):
-        LinkModel.mark_dead(link_id)
         return False, "unknown"
 
     except ChannelPrivateError:
+        # موجود لكنه خاص
         return True, "group_private"
 
     except Exception:
-        LinkModel.mark_dead(link_id)
         return False, "unknown"
 
 
-async def bulk_check_links(session: dict, links: list):
+async def bulk_check_links(
+    client,
+    limit: int = 100,
+    delay_seconds: int = 2,
+) -> int:
     """
-    فحص مجموعة روابط باستخدام حساب واحد
+    فحص مجموعة روابط غير مفحوصة (is_alive = 0)
+    - يستخدم client واحد
+    - يحدّث DB مباشرة
+    - يرجع عدد الروابط المفحوصة
     """
 
-    for item in links:
+    unchecked = LinkModel.get_unchecked(limit=limit)
+    if not unchecked:
+        return 0
+
+    checked = 0
+    for item in unchecked:
         try:
-            await check_link_alive(
-                session["id"],
-                session["session_string"],
+            alive, category = await check_single_link(
+                client,
                 item["id"],
                 item["link"],
             )
-            await asyncio.sleep(2)
+
+            if alive:
+                LinkModel.mark_alive(item["id"], category)
+            else:
+                LinkModel.mark_dead(item["id"])
+
+            checked += 1
+            await asyncio.sleep(delay_seconds)
+
         except Exception:
+            # أي خطأ غير متوقع → نعتبر الرابط ميت ونكمل
+            LinkModel.mark_dead(item["id"])
+            await asyncio.sleep(1)
             continue
+
+    return checked
