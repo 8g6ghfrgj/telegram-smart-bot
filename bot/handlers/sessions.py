@@ -1,6 +1,7 @@
 # bot/handlers/sessions.py
+# =========================
 # إدارة حسابات Telethon (إضافة / عرض / حذف)
-# لا يوجد أي CallbackQueryHandler عام هنا
+# =========================
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -11,7 +12,7 @@ from bot.keyboards import back_keyboard
 
 
 # ======================
-# Callbacks (Buttons)
+# Callback Buttons
 # ======================
 
 async def add_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -45,12 +46,12 @@ async def list_sessions_callback(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
 
-    text = "👥 الحسابات النشطة:\n\n"
+    lines = ["👥 الحسابات النشطة:\n"]
     for s in sessions:
-        text += f"- ID: {s['id']}\n"
+        lines.append(f"- ID: {s['id']}")
 
     await query.edit_message_text(
-        text,
+        "\n".join(lines),
         reply_markup=back_keyboard(),
     )
 
@@ -66,7 +67,7 @@ async def remove_session_callback(update: Update, context: ContextTypes.DEFAULT_
     context.user_data["awaiting_remove_session"] = True
 
     await query.edit_message_text(
-        "❌ أرسل ID الحساب الذي تريد حذفه:",
+        "❌ أرسل ID الحساب المراد حذفه:",
         reply_markup=back_keyboard(),
     )
 
@@ -78,7 +79,7 @@ async def remove_session_callback(update: Update, context: ContextTypes.DEFAULT_
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     معالجة النصوص حسب الحالة فقط
-    (يُستدعى من text router المركزي)
+    (يتم استدعاؤها من Router المركزي)
     """
     text = update.message.text.strip()
 
@@ -88,26 +89,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = telethon_manager.add_session(text)
 
         await update.message.reply_text(
-            "✅ تم إضافة الحساب بنجاح." if success else "❌ فشل إضافة الحساب.",
+            "✅ تم إضافة الحساب بنجاح."
+            if success else
+            "❌ فشل إضافة الحساب (مكرر أو تجاوز الحد).",
             reply_markup=back_keyboard(),
         )
         return
 
     # حذف جلسة
     if context.user_data.get("awaiting_remove_session"):
-        context.user_data.clear()
-        try:
-            session_id = int(text)
-        except ValueError:
-            await update.message.reply_text(
-                "❌ ID غير صحيح.",
-                reply_markup=back_keyboard(),
-            )
-            return
-
-        await telethon_manager.deactivate_session(session_id)
-        await update.message.reply_text(
-            "✅ تم حذف الحساب.",
-            reply_markup=back_keyboard(),
-        )
-        return
