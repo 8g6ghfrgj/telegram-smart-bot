@@ -1,51 +1,61 @@
 # core/distributor.py
-# توزيع الروابط النشطة على الحسابات بدون تكرار
-# هذا الملف يعتمد على database/models.py و bot/config.py
+# =========================
+# توزيع الروابط على الحسابات
+# منطق فقط (Pure Business Logic)
+# =========================
 
 from typing import Dict, List
 
-from database.models import LinkModel, AssignmentModel, SessionModel
-from bot.config import MAX_LINKS_PER_ACCOUNT
+from database.models import SessionModel, LinkModel, AssignmentModel
+from config import LINKS_PER_SESSION
 
 
-def distribute_links() -> Dict[int, List[int]]:
+def distribute_links() -> Dict[str, int]:
     """
-    توزيع الروابط الحية غير الموزعة على الحسابات النشطة
+    توزيع الروابط الحيّة غير الموزعة على الحسابات النشطة
 
-    يرجع:
+    القواعد:
+    - كل رابط يوزّع على حساب واحد فقط
+    - حد أقصى LINKS_PER_SESSION لكل حساب
+    - التوزيع بالتسلسل (بدون عشوائية)
+
+    يرجع إحصائيات:
     {
-        session_id: [link_id, link_id, ...],
-        ...
+        "sessions": عدد الحسابات,
+        "links": عدد الروابط الموزعة
     }
     """
 
     sessions = SessionModel.get_active()
     if not sessions:
-        return {}
+        return {"sessions": 0, "links": 0}
 
     links = LinkModel.get_alive_unassigned()
     if not links:
-        return {}
+        return {"sessions": len(sessions), "links": 0}
 
-    distribution: Dict[int, List[int]] = {s["id"]: [] for s in sessions}
+    link_index = 0
+    assigned = 0
 
-    session_index = 0
-    sessions_count = len(sessions)
+    for session in sessions:
+        session_id = session["id"]
 
-    for link in links:
-        session = sessions[session_index]
-        sid = session["id"]
-
-        # حد 500 رابط لكل حساب
-        if len(distribution[sid]) >= MAX_LINKS_PER_ACCOUNT:
-            session_index += 1
-            if session_index >= sessions_count:
+        for _ in range(LINKS_PER_SESSION):
+            if link_index >= len(links):
                 break
-            session = sessions[session_index]
-            sid = session["id"]
 
-        AssignmentModel.add(sid, link["id"])
-        LinkModel.mark_assigned(link["id"])
-        distribution[sid].append(link["id"])
+            AssignmentModel.assign(
+                session_id=session_id,
+                link_id=links[link_index]["id"],
+            )
 
-    return distribution
+            assigned += 1
+            link_index += 1
+
+        if link_index >= len(links):
+            break
+
+    return {
+        "sessions": len(sessions),
+        "links": assigned,
+    }
