@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: telegram-smart-bot
+    env: docker
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: TELETHON_API_ID
+        sync: false
+      - key: TELETHON_API_HASH
+        sync: false
