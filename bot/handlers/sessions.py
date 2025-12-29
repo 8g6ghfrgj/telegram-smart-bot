@@ -1,14 +1,23 @@
 # bot/handlers/sessions.py
+# إدارة حسابات Telethon (إضافة / عرض / حذف)
+# لا يوجد أي CallbackQueryHandler عام هنا
 
 from telegram import Update
-from telegram.ext import ContextTypes, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import ContextTypes
 
 from tgclient.manager import telethon_manager
 from database.models import SessionModel
 from bot.keyboards import back_keyboard
 
 
+# ======================
+# Callbacks (Buttons)
+# ======================
+
 async def add_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    زر: إضافة حساب
+    """
     query = update.callback_query
     await query.answer()
 
@@ -16,14 +25,60 @@ async def add_session_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["awaiting_session"] = True
 
     await query.edit_message_text(
-        "➕ أرسل StringSession:",
+        "➕ أرسل StringSession الآن:",
         reply_markup=back_keyboard(),
     )
 
 
+async def list_sessions_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    زر: عرض الحسابات
+    """
+    query = update.callback_query
+    await query.answer()
+
+    sessions = SessionModel.get_active()
+    if not sessions:
+        await query.edit_message_text(
+            "❌ لا توجد حسابات مضافة.",
+            reply_markup=back_keyboard(),
+        )
+        return
+
+    text = "👥 الحسابات النشطة:\n\n"
+    for s in sessions:
+        text += f"- ID: {s['id']}\n"
+
+    await query.edit_message_text(
+        text,
+        reply_markup=back_keyboard(),
+    )
+
+
+async def remove_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    زر: حذف حساب
+    """
+    query = update.callback_query
+    await query.answer()
+
+    context.user_data.clear()
+    context.user_data["awaiting_remove_session"] = True
+
+    await query.edit_message_text(
+        "❌ أرسل ID الحساب الذي تريد حذفه:",
+        reply_markup=back_keyboard(),
+    )
+
+
+# ======================
+# Text Handler (via Router)
+# ======================
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    استقبال نص مشروط حسب الحالة
+    معالجة النصوص حسب الحالة فقط
+    (يُستدعى من text router المركزي)
     """
     text = update.message.text.strip()
 
@@ -33,7 +88,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = telethon_manager.add_session(text)
 
         await update.message.reply_text(
-            "✅ تم إضافة الحساب." if success else "❌ فشل إضافة الحساب.",
+            "✅ تم إضافة الحساب بنجاح." if success else "❌ فشل إضافة الحساب.",
             reply_markup=back_keyboard(),
         )
         return
@@ -43,55 +98,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         try:
             session_id = int(text)
-            telethon_manager.deactivate_session(session_id)
-            await update.message.reply_text(
-                "✅ تم حذف الحساب.",
-                reply_markup=back_keyboard(),
-            )
         except ValueError:
             await update.message.reply_text(
                 "❌ ID غير صحيح.",
                 reply_markup=back_keyboard(),
             )
-        return
+            return
 
-
-async def list_sessions_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    sessions = SessionModel.get_active()
-    if not sessions:
-        await query.edit_message_text(
-            "❌ لا توجد حسابات.",
+        await telethon_manager.deactivate_session(session_id)
+        await update.message.reply_text(
+            "✅ تم حذف الحساب.",
             reply_markup=back_keyboard(),
         )
         return
-
-    text = "👥 الحسابات:\n\n"
-    for s in sessions:
-        text += f"- ID: {s['id']}\n"
-
-    await query.edit_message_text(text, reply_markup=back_keyboard())
-
-
-async def remove_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    context.user_data.clear()
-    context.user_data["awaiting_remove_session"] = True
-
-    await query.edit_message_text(
-        "❌ أرسل ID الحساب:",
-        reply_markup=back_keyboard(),
-    )
-
-
-def register_sessions_handlers(app):
-    app.add_handler(CallbackQueryHandler(add_session_callback, pattern="^add_session$"))
-    app.add_handler(CallbackQueryHandler(list_sessions_callback, pattern="^list_sessions$"))
-    app.add_handler(CallbackQueryHandler(remove_session_callback, pattern="^remove_session$"))
-
-    # Handler واحد فقط للنص
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
