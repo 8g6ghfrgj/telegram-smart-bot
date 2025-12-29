@@ -1,91 +1,92 @@
 # tgclient/manager.py
-# إدارة جلسات Telethon (StringSession فقط)
-# هذا الملف لا يُنشئ أي اتصال فعلي إلا عند الطلب
+# إدارة جلسات Telethon (StringSession)
+# هذه الطبقة مسؤولة فقط عن:
+# - تحميل الجلسات من DB
+# - إنشاء TelegramClient عند الطلب
+# - إعادة استخدام الاتصال ومنع التكرار
 
 import os
 import asyncio
-from typing import Dict, List
+from typing import Dict
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
+from config import TELETHON_API_ID, TELETHON_API_HASH
 from database.models import SessionModel
-from bot.config import MAX_SESSIONS
 
 
 class TelethonSessionManager:
-    """
-    مسؤول عن:
-    - تحميل الجلسات من قاعدة البيانات
-    - إنشاء TelegramClient عند الحاجة فقط
-    - منع تكرار الجلسات
-    """
-
     def __init__(self):
+        # session_id -> TelegramClient
         self._clients: Dict[int, TelegramClient] = {}
+        self._lock = asyncio.Lock()
 
-        self._api_id = os.getenv("TELETHON_API_ID")
-        self._api_hash = os.getenv("TELETHON_API_HASH")
+    async def get_client(self, session_id: int, session_string: str) -> TelegramClient:
+        """
+        إرجاع عميل Telethon متصل وجاهز.
+        يعيد استخدام الاتصال إن وُجد.
+        """
+        async with self._lock:
+            if session_id in self._clients:
+                client = self._clients[session_id]
+                if client.is_connected():
+                    return client
 
-    # =========================
-    # Sessions (DB)
-    # =========================
+            client = TelegramClient(
+                StringSession(session_string),
+                int(TELETHON_API_ID),
+                TELETHON_API_HASH,
+            )
 
-    def add_session(self, session_string: str) -> bool:
-        active = SessionModel.get_active()
-        if len(active) >= MAX_SESSIONS:
-            return False
+            await client.connect()
+            self._clients[session_id] = client
+            return client
 
-        if SessionModel.exists(session_string):
-            return False
-
-        return SessionModel.add(session_string)
-
-    def get_active_sessions(self) -> List[dict]:
-        return SessionModel.get_active()
-
-    def deactivate_session(self, session_id: int):
-        SessionModel.deactivate(session_id)
+    async def disconnect(self, session_id: int) -> None:
+        """
+        فصل اتصال جلسة واحدة
+        """
         client = self._clients.pop(session_id, None)
         if client:
             try:
-                asyncio.create_task(client.disconnect())
+                await client.disconnect()
             except Exception:
                 pass
 
-    # =========================
-    # Telethon Clients
-    # =========================
-
-    def _check_credentials(self):
-        if not self._api_id or not self._api_hash:
-            raise RuntimeError(
-                "TELETHON_API_ID و TELETHON_API_HASH غير مضبوطين في المتغيرات البيئية"
-            )
-
-    async def get_client(self, session_id: int, session_string: str) -> TelegramClient:
-        if session_id in self._clients:
-            return self._clients[session_id]
-
-        self._check_credentials()
-
-        client = TelegramClient(
-            StringSession(session_string),
-            int(self._api_id),
-            self._api_hash,
-        )
-
-        await client.connect()
-        self._clients[session_id] = client
-        return client
-
-    async def disconnect_all(self):
+    async def disconnect_all(self) -> None:
+        """
+        فصل جميع الاتصالات (يُستخدم عند الإيقاف)
+        """
         for client in self._clients.values():
             try:
                 await client.disconnect()
             except Exception:
                 pass
         self._clients.clear()
+
+    # =========================
+    # DB helpers (اختصار)
+    # =========================
+
+    def add_session(self, session_string: str) -> bool:
+        """
+        إضافة جلسة جديدة إلى DB
+        """
+        return SessionModel.add(session_string)
+
+    def get_active_sessions(self):
+        """
+        جلب الجلسات النشطة من DB
+        """
+        return SessionModel.get_active()
+
+    async def deactivate_session(self, session_id: int):
+        """
+        تعطيل جلسة (DB + فصل الاتصال)
+        """
+        SessionModel.deactivate(session_id)
+        await self.disconnect(session_id)
 
 
 # كائن عام يُستخدم في بقية المشروع
